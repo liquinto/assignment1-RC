@@ -1,0 +1,329 @@
+---
+title: "5_Assignment 4"
+output: html_document
+date: "2026-02-23"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(readr.show_col_types = FALSE)
+
+# Loading in the needed libraries
+library(readr)
+library(readxl)
+library(dplyr)
+library(lubridate)
+```
+
+# Group 5: Assignment 1
+
+## 1. Study Objectives
+
+### 1.1 Study Aim
+
+We will be investigating the incidence of `Asthma_possible` and `Asthma_narrow`. To be able to do this, we will need the following:
+
+#### 1.1.1 Including
+
+-   Population:
+    -   Age: 0-120
+    -   Sex: Male / Female
+-   Period: 2010-2022
+-   Age Bands:
+    -   0 - 19
+    -   20 - 39
+    -   40 - 59
+    -   60+
+
+#### 1.1.2 Excluding
+
+-   Invalid sex
+-   Missing person ID
+-   Observation time is outside 2010-2022
+-   Age is outside of the range
+
+## 2. Clean the data
+
+The following R code will load in the needed tables for us. Note, that we do not need to load the **VACCINES** data, or the **VISIT_OCCURANCE** data. As these will not help us in identifying the incidence rate for `Asthma_possible`, and `Asthma_narrow`.
+
+```{r load_data}
+# Loading in the data
+persons <- read_csv("Data/PERSONS.csv")
+observation_periods <- read_csv("Data/OBSERVATION_PERIODS.csv")
+events <- read_csv("Data/EVENTS.csv")
+asthma_codelist <- read_excel("Codelist/R_ASTHMA_COV.xlsx")
+```
+
+### 2.1 Identifing Key Variables
+
+```{r}
+# Checking the dimensions of the tables that we will be working with now
+dim(persons)
+dim(observation_periods)
+dim(events)
+
+print("---")
+
+# Checking the names of the columns of the data
+names(events)
+print("---")
+names(observation_periods)
+print("---")
+names(persons)
+```
+
+Here, we can see that both our persons and observation_periods table contain 500_000 entries, while events contain 126189 entries. The data models contain the following needed information:
+
+-   **EVENTS**:
+    -   `start_date_record` is in the events data
+    -   `person_id` is in the events data
+    -   `event_code` is in the events data
+-   **OBSERVATION_PERIODS**:
+    -   `person_id` is in the observation_periods data
+    -   `op_start_date` is in the observation_periods data
+    -   `op_end_date` is in the observation_periods data
+-   **PERSONS**:
+    -   `person_id` is in the persons data
+    -   `day_of_birth` is in the persons data
+    -   `month_of_birth` is in the persons data
+    -   `year_of_birth` is in the persons data
+    -   `sex_at_instance_creation` is in the persons data
+
+### 2.2 Clean the data
+
+In this section of the report we will be cleaning the data.
+
+#### 2.2.1 Remove duplicates
+
+Using the following code, we will be able to remove duplicates.
+
+```{r}
+# Check for duplicate persons in the persons table
+sum(duplicated(persons$person_id))
+
+# Check for duplicates in the observation periods table
+sum(duplicated(observation_periods))
+  
+# Check for duplicates in the events table
+sum(duplicated(events))
+```
+
+We can see that there are no duplicates for `person_id` in the persons table. There are also no duplicates in the observation_periods. However, in the events table there do seem to be 498 duplicate entries. Therefore, we remove those.
+
+```{r}
+events <- events %>% distinct()
+```
+
+
+#### 2.2.2 Handle Missing / Invalid Data
+
+```{r}
+# Checking if the person_id is missing from any of the persons, observation_periods, or events table
+sum(is.na(persons$person_id))
+sum(is.na(observation_periods$person_id))
+sum(is.na(events$person_id))
+sum(persons$person_id == "")
+sum(observation_periods$person_id == "")
+sum(events$person_id == "")
+
+# Check if the persons table is missing values for sex_at_instance_creation, or year_of_birth
+sum(is.na(persons$sex_at_instance_creation))
+sum(is.na(persons$year_of_birth))
+sum(persons$sex_at_instance_creation == "")
+sum(persons$year_of_birth == "")
+```
+
+Currently, the `person_id` is nowhere missing in the persons, observation_periods and events table. Also, the `sex_at_instance_creation`, and `year_of_birth` is not missing from the persons data.
+
+#### 2.2.3 Standardize date formats and check for valid entires
+
+```{r}
+# Check for invalid dates, where the observation end date is before the observation start date
+sum(observation_periods$op_end_date < observation_periods$op_start_date)
+
+# Easily check if we have birth years outside of the time requirements
+summary(persons$year_of_birth)
+
+# As the maximum is 2024, we want to check how many birth years are over 2022
+sum(persons$year_of_birth > 2022)
+
+# Check how many peoples death year is before their birth year
+sum(
+  !is.na(persons$year_of_death) &
+  !is.na(persons$year_of_birth) &
+  persons$year_of_death < persons$year_of_birth
+)
+```
+
+We can see here that currently, 457 records from the observation_periods have an operation end_date before the operation start_date. Therefore, these must be excluded. We can also see that there are 10987 entries with a birth year after the end date of our observation period. We shouldn't include these, but these will be automatically excluded when creating the study population in the next step.
+
+```{r}
+# Excluding entries with operation end_date before the operation start_date from the observation_periods table
+observation_periods <- observation_periods %>%
+  filter(op_end_date >= op_start_date)
+```
+
+### 2.3 Create the study population
+
+In this section of the report, we will be building the study population.
+
+#### 2.3.1 Merge PERSONS with OBSERVATION_PERIODS
+
+In this section of code, we will be merging the persons table, with the observation_periods table. We will also take a quick look at this table, so we can see these have correctly been merged.
+
+```{r}
+# Merging the persons and observation_periods table
+study_population <- observation_periods %>%
+  inner_join(persons, by = "person_id")
+
+# Quickly checking what these merged data sources look like
+dim(study_population)
+head(study_population)
+```
+
+#### 2.3.2 Exclude subjects with impossible birthdates
+
+In this section of code, we will be removing everyone from the study population in case they are born after 2022. If that is the case, they can't have any valid events.
+
+```{r}
+# We remove everyone from the population that is born after 2022. We know that the lower bound will not exclude anyone as the earliest birth year is 1934, which means the person is less than 120 years old, also we don't have to look at missing values as these do not occur in this data source
+study_population <- study_population %>%
+  filter(
+    year_of_birth <= 2022
+  )
+```
+
+#### 2.3.3 Impute missing `birth_date` and `death_date` values
+
+If we find any missing values in the birth month / day, or the death month / day, we will automatically plug the 15th of July in those. Note, that this means that we are filling in a lot of incorrect values for when a person has died. However, these values cannot be converted to a proper date field in the next step. Thus `birth_date` and `death_date` will be filled correctly.
+
+```{r}
+# Make sure to replace the NA values from month_of_birth, day_of_birth, month_of_death, day_of_death, to be sure that the 15th of July is used.
+study_population <- study_population %>%
+  mutate(
+    month_of_birth = replace_na(month_of_birth, "07"),
+    day_of_birth   = replace_na(day_of_birth, "15"),
+    month_of_death = replace_na(month_of_death, "07"),
+    day_of_death  = replace_na(day_of_death, "15"),
+  )
+```
+
+#### 2.3.4 Convert date variables from character strings to date format
+
+We will now be converting the dates from strings, to a proper date format. This will be done using the `lubridate` library.
+
+```{r}
+# Make sure that we create proper date format characters for the birth and death date in the study_population
+study_population <- study_population %>%
+  mutate(
+    birth_date = ymd(paste(year_of_birth, month_of_birth, day_of_birth, sep = "-")),
+    death_date = ymd(paste(year_of_death, month_of_death, day_of_death, sep = "-"))
+  )
+
+# Make sure that the op_start_date and op_end_date are properly converted to the dates
+study_population <- study_population %>%
+  mutate(
+    op_start_date = ymd(op_start_date),
+    op_end_date   = ymd(op_end_date)
+  )
+
+# Make sure that start_date_record from events is properly converted to a date
+events <- events %>%
+  mutate(
+    start_date_record = ymd(start_date_record)
+  )
+
+# Quickly show an overview of what these dates look like
+summary(study_population$birth_date)
+summary(study_population$death_date)
+summary(study_population$op_start_date)
+summary(events$start_date_record)
+```
+
+Note again, that the death_date contains a lot of values that are `NA` (also, see the error). This is because the year is missing for a lot of people, as they haven't died. 
+
+#### 2.3.5 Apply inclusion / exclusion criteria to observation start and end dates
+
+As stated before, the observation period will be between 2010 and 2022. Therefore, we set the following start date: `2010-01-01`, and the following end date: `2022-12-31`. We will exclude all entries that contain an observation that is not within this time period. Next to that, we also remove entries where the end date happened before the start date.
+
+```{r}
+# Define the start and end dates of the observation
+study_start <- as.Date("2010-01-01")
+study_end   <- as.Date("2022-12-31")
+
+# Exclude all entries with an observation end date before the start of the observation time period, or a start date outside of the observation time period
+study_population <- study_population %>%
+  filter(
+    op_end_date >= study_start,
+    op_start_date <= study_end
+  )
+
+# Exclude all entries where the observation end date is before the observation start date
+study_population <- study_population %>%
+  filter(op_end_date > op_start_date)
+
+# As it is also stated that we will only be looking at "M", and "F", we will want to remove all other entries where the `sex_at_instance_creation` is not "M", or "F"
+study_population <- study_population %>%
+  filter(sex_at_instance_creation %in% c("M", "F"))
+```
+
+Last but not least, it is important to note here, that we have excluded all entries where `sex_at_instance_creation` is not either "M", or "F". As per the objective, we want to calculate the incidence of asthma in males and females.
+
+### 2.4 Fix the code list for filtering
+
+In this section, we will be fixing the code listing, such that it will be easier to filter these correctly.
+
+#### 2.4.1 Ensure tags are stored and formatted correctly
+
+```{r}
+# Quickly show the column names and the first few entries of the table
+names(asthma_codelist)
+head(asthma_codelist)
+```
+
+As we want to study asthma, in both the possible and narrow case, we will need the following columns:
+
+-   Coding system
+-   Code
+-   Tag
+
+These are all available in the data source. Thus we can continue.
+
+#### 2.4.2 Validate columns for coding system
+
+We want to check whether there are any missing values from the Coding system and what coding systems exactly have been used. As there are no missing values, we won't have to remove any entries.
+
+```{r}
+# Check which coding systems are available in the data source
+table(asthma_codelist$"Coding system")
+
+# Check if the coding system is missing anywhere
+sum(is.na(asthma_codelist$"Coding system"))
+sum(asthma_codelist$"Coding system" == "")
+sum(asthma_codelist$"Coding system" == "-")
+```
+
+#### 2.4.3 Address missing or empty codes
+
+Now, we are going to check if there are any empty, or missing codes.
+
+```{r}
+# Check if there are any codes missing.
+sum(is.na(asthma_codelist$Code))
+sum(asthma_codelist$Code == "")
+sum(asthma_codelist$Code == "-")
+```
+
+ As there are a few missing, we will need to remove these from the table.
+
+```{r}
+# Remove entries from the asthma_codelist if the value in "Code" is "-"
+asthma_codelist <- asthma_codelist %>%
+  filter(`Code` != "-")
+```
+
+Looking through the table, we can see that `Code` from `asthma_codelist` no longer contains the value "-"
+
+```{r}
+asthma_codelist
+```
