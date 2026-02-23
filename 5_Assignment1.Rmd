@@ -333,30 +333,105 @@ asthma_codelist
 
 ### 3.1 Determine Observation Periods
 
+We defined follow-up from the latest entry (study start or observation start) to the earliest exit (event, death, or study end).
 
 #### 3.1.1 Define start and end dates for follow-up
+```{r}
+
+# Extract specific codes based on tags for filtering events
+narrow_codes <- asthma_codelist %>% filter(Tags == "Narrow") %>% pull(Code)
+possible_codes <- asthma_codelist %>% filter(Tags %in% c("Narrow", "possible")) %>% pull(Code)
+
+# Identify the first Asthma_narrow event date for each person to determine censoring
+first_event_dt <- events %>%
+  filter(event_code %in% narrow_codes) %>%
+  group_by(person_id) %>%
+  summarise(date_first_asthma = min(start_date_record, na.rm = TRUE)) %>%
+  ungroup()
+
+# Join the censoring dates back to the study population
+study_population <- study_population %>%
+  left_join(first_event_dt, by = "person_id")
+
+
+```
+
+
 
 
 
 #### 3.1.2 Censor data at the first event occurrence
 
+```{r}
+# Calculate the final follow-up dates using existing study_start and study_end
+study_population <- study_population %>%
+  mutate(
+    # Start of follow-up
+    fup_start = pmax(study_start, op_start_date),
+    # End of follow-up (censoring)
+    fup_end = pmin(study_end, op_end_date, death_date, date_first_asthma, na.rm = TRUE)
+  ) %>%
+  # Ensure follow-up duration is positive
+  filter(fup_start < fup_end)
 
+
+
+
+```
 
 ### 3.2 Stratify the data
 
-
+We performed time-splitting to assign each individual’s follow-up to yearly slices and dynamic age bands.
 
 #### 3.2.1 Define strata by year and age groups
 
+```{r}
+# Split follow-up into yearly records and assign age bands
+py_stratified <- study_population %>%
+  rowwise() %>%
+  # Create a sequence of years covered by the follow-up
+  mutate(year = list(year(fup_start):year(fup_end))) %>%
+  unnest(year) %>%
+  mutate(
+    # Dates within the specific calendar year
+    yr_start = pmax(fup_start, as.Date(paste0(year, "-01-01"))),
+    yr_end   = pmin(fup_end, as.Date(paste0(year, "-12-31"))),
+    # Calculate person-years for the year
+    days = as.numeric(yr_end - yr_start) + 1,
+    person_years = days / 365.25,
+    # Assign dynamic age bands based on the year
+    age_at_year = year - year_of_birth,
+    age_band = case_when(
+      age_at_year >= 0  & age_at_year <= 19 ~ "0-19",
+      age_at_year >= 20 & age_at_year <= 39 ~ "20-39",
+      age_at_year >= 40 & age_at_year <= 59 ~ "40-59",
+      age_at_year >= 60 ~ "60+",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(age_band))
 
+
+```
 
 ### 3.3 Sum Person-Time
 
+We aggregated total person-years by year, sex, and age band to create the study denominators.
 
 
 #### 3.3.1 Calculate total person-time for each stratum
 
+```{r}
+# Aggregate denominators
+denominator_data <- py_stratified %>%
+  group_by(year, sex_at_instance_creation, age_band) %>%
+  summarise(total_person_years = sum(person_years), .groups = "drop")
 
+# Preview the aggregated person-years
+head(denominator_data)
+
+
+```
 
 ## 4 dentify and Count Events
 
