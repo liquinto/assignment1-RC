@@ -114,7 +114,6 @@ We can see that there are no duplicates for `person_id` in the persons table. Th
 events <- events %>% distinct()
 ```
 
-
 #### 2.2.2 Handle Missing / Invalid Data
 
 ```{r}
@@ -240,7 +239,7 @@ summary(study_population$op_start_date)
 summary(events$start_date_record)
 ```
 
-Note again, that the death_date contains a lot of values that are `NA` (also, see the error). This is because the year is missing for a lot of people, as they haven't died. 
+Note again, that the death_date contains a lot of values that are `NA` (also, see the error). This is because the year is missing for a lot of people, as they haven't died.
 
 #### 2.3.5 Apply inclusion / exclusion criteria to observation start and end dates
 
@@ -314,7 +313,7 @@ sum(asthma_codelist$Code == "")
 sum(asthma_codelist$Code == "-")
 ```
 
- As there are a few missing, we will need to remove these from the table.
+As there are a few missing, we will need to remove these from the table.
 
 ```{r}
 # Remove entries from the asthma_codelist if the value in "Code" is "-"
@@ -327,3 +326,122 @@ Looking through the table, we can see that `Code` from `asthma_codelist` no long
 ```{r}
 asthma_codelist
 ```
+
+
+## 3 Aggregate Person-Time
+
+
+### 3.1 Determine Observation Periods
+
+
+#### 3.1.1 Define start and end dates for follow-up
+
+
+
+#### 3.1.2 Censor data at the first event occurrence
+
+
+
+### 3.2 Stratify the data
+
+
+
+#### 3.2.1 Define strata by year and age groups
+
+
+
+### 3.3 Sum Person-Time
+
+
+
+#### 3.3.1 Calculate total person-time for each stratum
+
+
+
+## 4 dentify and Count Events
+
+
+
+### 4.1 Define the Event of Interest
+
+
+
+#### 4.1.1 Specify what criteria qualifies as an event
+
+
+
+### 4.2 Count Events per Stratum
+
+
+
+#### 4.2.1 Count only one event per subject per stratum
+
+
+
+
+## 5. Calculate Incidence Rates
+
+
+
+### 5.1 Formula
+
+
+
+### 5.2 Calculate IR for Each Stratum
+
+
+
+## 6. Visualize Results
+
+
+
+### 6.1 Create Plots
+
+
+
+
+#### 6.1.1 Time trends
+
+
+
+
+#### 6.1.2 Stratified Rates
+
+
+
+### 6.2 Key Findings
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
