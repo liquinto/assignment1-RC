@@ -13,6 +13,7 @@ library(readr)
 library(readxl)
 library(dplyr)
 library(lubridate)
+library(tidyr)
 ```
 
 # Group 5: Assignment 1
@@ -438,19 +439,67 @@ head(denominator_data)
 
 
 ### 4.1 Define the Event of Interest
-
-
+We defined asthma events using the asthma codelist. Events were classified as Asthma_narrow or Asthma_possible based on the tags in the codelist. Only events occurring during the individual follow-up period were included.
 
 #### 4.1.1 Specify what criteria qualifies as an event
-
-
+# Identify asthma events and classify them as Narrow or Possible
+```{r}
+asthma_events <- events %>%
+  filter(event_code %in% possible_codes) %>%
+  mutate(
+    asthma_type = case_when(
+      event_code %in% narrow_codes ~ "Asthma_narrow",
+      TRUE ~ "Asthma_possible"
+    )
+  )
+```
 
 ### 4.2 Count Events per Stratum
-
+Asthma events were stratified by calendar year, sex, and age band. Only one event per subject was counted within each stratum. These counts are going to be used as the numerators for the incidence rate calculations.
 
 
 #### 4.2.1 Count only one event per subject per stratum
+```{r}
+# Merge asthma events with study population follow-up dates
+asthma_events <- asthma_events %>%
+  inner_join(
+    study_population %>%
+      select(person_id, fup_start, fup_end, birth_date, year_of_birth, sex_at_instance_creation),
+    by = "person_id"
+  ) %>%
+  
+  # Keep only events occurring during follow-up
+  filter(
+    start_date_record >= fup_start,
+    start_date_record <= fup_end
+  ) %>%
+  
+  # Define year and age band at event
+  mutate(
+    year = year(start_date_record),
+    age_at_event = year - year_of_birth,
+    age_band = case_when(
+      age_at_event >= 0  & age_at_event <= 19 ~ "0-19",
+      age_at_event >= 20 & age_at_event <= 39 ~ "20-39",
+      age_at_event >= 40 & age_at_event <= 59 ~ "40-59",
+      age_at_event >= 60 ~ "60+",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(age_band)) %>%
+  
+  # Count only one event per subject per stratum
+  distinct(person_id, year, age_band, asthma_type, .keep_all = TRUE)
 
+
+# Aggregate numerator counts
+numerator_data <- asthma_events %>%
+  group_by(year, sex_at_instance_creation, age_band, asthma_type) %>%
+  summarise(events = n(), .groups = "drop")
+
+# Preview event counts
+head(numerator_data)
+```
 
 
 
