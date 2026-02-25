@@ -1,0 +1,5 @@
+sex,asthma_type,events,total_person_years,incidence_per_1000py
+Female,Asthma_narrow,361,2817363.27,0.128
+Male,Asthma_narrow,363,2776758.48,0.131
+Female,Asthma_possible,3338,2817363.27,1.185
+Male,Asthma_possible,3403,2776758.48,1.226

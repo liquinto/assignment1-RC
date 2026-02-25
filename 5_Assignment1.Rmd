@@ -14,6 +14,7 @@ library(readxl)
 library(dplyr)
 library(lubridate)
 library(tidyr)
+library(ggplot2)
 ```
 
 # Group 5: Assignment 1
@@ -328,15 +329,14 @@ Looking through the table, we can see that `Code` from `asthma_codelist` no long
 asthma_codelist
 ```
 
-
 ## 3 Aggregate Person-Time
-
 
 ### 3.1 Determine Observation Periods
 
 We defined follow-up from the latest entry (study start or observation start) to the earliest exit (event, death, or study end).
 
 #### 3.1.1 Define start and end dates for follow-up
+
 ```{r}
 
 # Extract specific codes based on tags for filtering events
@@ -356,10 +356,6 @@ study_population <- study_population %>%
 
 
 ```
-
-
-
-
 
 #### 3.1.2 Censor data at the first event occurrence
 
@@ -419,7 +415,6 @@ py_stratified <- study_population %>%
 
 We aggregated total person-years by year, sex, and age band to create the study denominators.
 
-
 #### 3.3.1 Calculate total person-time for each stratum
 
 ```{r}
@@ -436,13 +431,14 @@ head(denominator_data)
 
 ## 4 dentify and Count Events
 
-
-
 ### 4.1 Define the Event of Interest
+
 We defined asthma events using the asthma codelist. Events were classified as Asthma_narrow or Asthma_possible based on the tags in the codelist. Only events occurring during the individual follow-up period were included.
 
 #### 4.1.1 Specify what criteria qualifies as an event
+
 # Identify asthma events and classify them as Narrow or Possible
+
 ```{r}
 asthma_events <- events %>%
   filter(event_code %in% possible_codes) %>%
@@ -455,10 +451,11 @@ asthma_events <- events %>%
 ```
 
 ### 4.2 Count Events per Stratum
+
 Asthma events were stratified by calendar year, sex, and age band. Only one event per subject was counted within each stratum. These counts are going to be used as the numerators for the incidence rate calculations.
 
-
 #### 4.2.1 Count only one event per subject per stratum
+
 ```{r}
 # Merge asthma events with study population follow-up dates
 asthma_events <- asthma_events %>%
@@ -501,71 +498,246 @@ numerator_data <- asthma_events %>%
 head(numerator_data)
 ```
 
-
-
 ## 5. Calculate Incidence Rates
-
-
 
 ### 5.1 Formula
 
-
+For each stratum, incidence rate is calculated as: $$
+IR = \frac{\text{events}}{\text{person-years}} \times 1000
+$$
 
 ### 5.2 Calculate IR for Each Stratum
 
+```{r}
+asthma_types <- c("Asthma_possible", "Asthma_narrow")
 
+# Join numerators and denominators for every stratum
+incidence_data <- denominator_data %>%
+  crossing(asthma_type = asthma_types) %>%
+  left_join(
+    numerator_data,
+    by = c("year", "sex_at_instance_creation", "age_band", "asthma_type")
+  ) %>%
+  mutate(
+    events = replace_na(events, 0L),
+    incidence_per_1000py = if_else(
+      total_person_years > 0,
+      (events / total_person_years) * 1000,
+      NA_real_
+    )
+  ) %>%
+  arrange(asthma_type, year, sex_at_instance_creation, age_band)
+
+# Preview incidence by stratum
+head(incidence_data)
+```
+
+### 5.3 Report Incidence Rates as Numbers
+
+```{r}
+# Full stratum-level table (year, sex, age band, definition)
+incidence_table_stratum <- incidence_data %>%
+  mutate(
+    sex = recode(sex_at_instance_creation, "F" = "Female", "M" = "Male"),
+    total_person_years = round(total_person_years, 2),
+    incidence_per_1000py = round(incidence_per_1000py, 3)
+  ) %>%
+  select(
+    year, sex, age_band, asthma_type, events,
+    total_person_years, incidence_per_1000py
+  ) %>%
+  arrange(asthma_type, year, sex, age_band)
+
+# Yearly table by sex and definition (aggregated over age bands)
+incidence_table_year_sex <- incidence_data %>%
+  group_by(year, sex_at_instance_creation, asthma_type) %>%
+  summarise(
+    events = sum(events),
+    total_person_years = sum(total_person_years),
+    incidence_per_1000py = (events / total_person_years) * 1000,
+    .groups = "drop"
+  ) %>%
+  mutate(
+    sex = recode(sex_at_instance_creation, "F" = "Female", "M" = "Male"),
+    total_person_years = round(total_person_years, 2),
+    incidence_per_1000py = round(incidence_per_1000py, 3)
+  ) %>%
+  select(year, sex, asthma_type, events, total_person_years, incidence_per_1000py) %>%
+  arrange(asthma_type, year, sex)
+
+# Overall table (2010-2022 pooled) by sex and definition
+incidence_table_overall <- incidence_data %>%
+  group_by(sex_at_instance_creation, asthma_type) %>%
+  summarise(
+    events = sum(events),
+    total_person_years = sum(total_person_years),
+    incidence_per_1000py = (events / total_person_years) * 1000,
+    .groups = "drop"
+  ) %>%
+  mutate(
+    sex = recode(sex_at_instance_creation, "F" = "Female", "M" = "Male"),
+    total_person_years = round(total_person_years, 2),
+    incidence_per_1000py = round(incidence_per_1000py, 3)
+  ) %>%
+  select(sex, asthma_type, events, total_person_years, incidence_per_1000py) %>%
+  arrange(asthma_type, sex)
+
+# Preview the tables that can be inserted in the report
+knitr::kable(
+  incidence_table_overall,
+  caption = "Overall incidence rates (2010-2022 pooled), by sex and asthma definition"
+)
+
+knitr::kable(
+  incidence_table_year_sex,
+  caption = "Yearly incidence rates by sex and asthma definition"
+)
+
+rmarkdown::paged_table(incidence_table_stratum)
+```
+
+```{r}
+dir.create("tables", showWarnings = FALSE, recursive = TRUE)
+
+write_csv(incidence_table_stratum, "tables/incidence_table_stratum.csv")
+write_csv(incidence_table_year_sex, "tables/incidence_table_year_sex.csv")
+write_csv(incidence_table_overall, "tables/incidence_table_overall.csv")
+```
 
 ## 6. Visualize Results
 
-
-
 ### 6.1 Create Plots
 
+```{r}
+# Consistent labels/order for plots
+age_levels <- c("0-19", "20-39", "40-59", "60+")
 
+incidence_data <- incidence_data %>%
+  mutate(
+    age_band = factor(age_band, levels = age_levels),
+    sex = recode(sex_at_instance_creation, "F" = "Female", "M" = "Male")
+  )
 
+# Yearly trend by sex, split by definition
+plot_data_trend_sex <- incidence_data %>%
+  group_by(year, sex, asthma_type) %>%
+  summarise(
+    events = sum(events),
+    total_person_years = sum(total_person_years),
+    incidence_per_1000py = (events / total_person_years) * 1000,
+    .groups = "drop"
+  )
+
+# Age-band comparison by sex, pooled over 2010-2022
+plot_data_age_band <- incidence_data %>%
+  group_by(age_band, sex, asthma_type) %>%
+  summarise(
+    events = sum(events),
+    total_person_years = sum(total_person_years),
+    incidence_per_1000py = (events / total_person_years) * 1000,
+    .groups = "drop"
+  )
+
+# Heatmap data (year x age-band), stratified by sex and definition
+plot_data_heatmap <- incidence_data %>%
+  group_by(year, age_band, sex, asthma_type) %>%
+  summarise(
+    events = sum(events),
+    total_person_years = sum(total_person_years),
+    incidence_per_1000py = (events / total_person_years) * 1000,
+    .groups = "drop"
+  )
+
+# Possible vs narrow overall trend
+plot_data_definition <- incidence_data %>%
+  group_by(year, asthma_type) %>%
+  summarise(
+    events = sum(events),
+    total_person_years = sum(total_person_years),
+    incidence_per_1000py = (events / total_person_years) * 1000,
+    .groups = "drop"
+  )
+```
 
 #### 6.1.1 Time trends
 
+```{r}
+plot1 <- ggplot(plot_data_trend_sex, aes(x = year, y = incidence_per_1000py, color = sex)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 1.7) +
+  facet_wrap(~asthma_type, ncol = 1) +
+  scale_color_manual(values = c("Female" = "#c44e52", "Male" = "#4c72b0")) +
+  scale_x_continuous(breaks = seq(2010, 2022, by = 1)) +
+  labs(
+    title = "Yearly Incidence Trend by Sex",
+    x = "Year",
+    y = "Incidence rate per 1,000 person-years",
+    color = "Sex"
+  ) +
+  theme_minimal()
 
-
+plot1
+```
 
 #### 6.1.2 Stratified Rates
 
+```{r}
+plot2 <- ggplot(plot_data_age_band, aes(x = age_band, y = incidence_per_1000py, fill = sex)) +
+  geom_col(position = position_dodge(width = 0.75), width = 0.65) +
+  facet_wrap(~asthma_type, ncol = 1) +
+  scale_fill_manual(values = c("Female" = "#c44e52", "Male" = "#4c72b0")) +
+  labs(
+    title = "Age-Band Incidence Comparison by Sex (Pooled 2010-2022)",
+    x = "Age band",
+    y = "Incidence rate per 1,000 person-years",
+    fill = "Sex"
+  ) +
+  theme_minimal()
 
+plot2
+```
+
+```{r}
+plot3 <- ggplot(plot_data_heatmap, aes(x = year, y = age_band, fill = incidence_per_1000py)) +
+  geom_tile(color = "white", linewidth = 0.2) +
+  facet_grid(asthma_type ~ sex) +
+  scale_x_continuous(breaks = seq(2010, 2022, by = 2)) +
+  scale_fill_gradient(low = "#f7fbff", high = "#08306b") +
+  labs(
+    title = "Year x Age-Band Heatmap of Incidence Rates",
+    x = "Year",
+    y = "Age band",
+    fill = "IR / 1,000 PY"
+  ) +
+  theme_minimal()
+
+plot3
+```
+
+```{r}
+plot4 <- ggplot(plot_data_definition, aes(x = year, y = incidence_per_1000py, color = asthma_type)) +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 1.8) +
+  scale_color_manual(values = c("Asthma_possible" = "#1b9e77", "Asthma_narrow" = "#d95f02")) +
+  scale_x_continuous(breaks = seq(2010, 2022, by = 1)) +
+  labs(
+    title = "Possible vs Narrow Definition Comparison Over Time",
+    x = "Year",
+    y = "Incidence rate per 1,000 person-years",
+    color = "Definition"
+  ) +
+  theme_minimal()
+
+plot4
+```
 
 ### 6.2 Key Findings
 
+```{r}
+dir.create("figures", showWarnings = FALSE, recursive = TRUE)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+ggsave("figures/figure1_yearly_trend_by_sex.png", plot = plot1, width = 10, height = 7, dpi = 300)
+ggsave("figures/figure2_ageband_comparison_by_sex.png", plot = plot2, width = 10, height = 7, dpi = 300)
+ggsave("figures/figure3_year_age_heatmap.png", plot = plot3, width = 11, height = 8, dpi = 300)
+ggsave("figures/figure4_possible_vs_narrow_trend.png", plot = plot4, width = 10, height = 6, dpi = 300)
+```
