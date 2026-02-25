@@ -508,7 +508,7 @@ $$
 
 ### 5.2 Calculate IR for Each Stratum
 
-```{r incidence_by_stratum}
+```{r}
 asthma_types <- c("Asthma_possible", "Asthma_narrow")
 
 # Join numerators and denominators for every stratum
@@ -534,7 +534,7 @@ head(incidence_data)
 
 ### 5.3 Report Incidence Rates as Numbers
 
-```{r incidence_tables_for_report}
+```{r}
 # Full stratum-level table (year, sex, age band, definition)
 incidence_table_stratum <- incidence_data %>%
   mutate(
@@ -596,7 +596,7 @@ knitr::kable(
 rmarkdown::paged_table(incidence_table_stratum)
 ```
 
-```{r save_incidence_tables, echo=TRUE}
+```{r}
 dir.create("tables", showWarnings = FALSE, recursive = TRUE)
 
 write_csv(incidence_table_stratum, "tables/incidence_table_stratum.csv")
@@ -608,7 +608,7 @@ write_csv(incidence_table_overall, "tables/incidence_table_overall.csv")
 
 ### 6.1 Create Plots
 
-```{r prep_plot_data}
+```{r}
 # Consistent labels/order for plots
 age_levels <- c("0-19", "20-39", "40-59", "60+")
 
@@ -661,7 +661,7 @@ plot_data_definition <- incidence_data %>%
 
 #### 6.1.1 Time trends
 
-```{r plot1_yearly_trend_by_sex, fig.width=10, fig.height=7}
+```{r}
 plot1 <- ggplot(plot_data_trend_sex, aes(x = year, y = incidence_per_1000py, color = sex)) +
   geom_line(linewidth = 1) +
   geom_point(size = 1.7) +
@@ -681,7 +681,7 @@ plot1
 
 #### 6.1.2 Stratified Rates
 
-```{r plot2_ageband_comparison, fig.width=10, fig.height=7}
+```{r}
 plot2 <- ggplot(plot_data_age_band, aes(x = age_band, y = incidence_per_1000py, fill = sex)) +
   geom_col(position = position_dodge(width = 0.75), width = 0.65) +
   facet_wrap(~asthma_type, ncol = 1) +
@@ -697,7 +697,7 @@ plot2 <- ggplot(plot_data_age_band, aes(x = age_band, y = incidence_per_1000py, 
 plot2
 ```
 
-```{r plot3_year_age_heatmap, fig.width=11, fig.height=8}
+```{r}
 plot3 <- ggplot(plot_data_heatmap, aes(x = year, y = age_band, fill = incidence_per_1000py)) +
   geom_tile(color = "white", linewidth = 0.2) +
   facet_grid(asthma_type ~ sex) +
@@ -714,7 +714,7 @@ plot3 <- ggplot(plot_data_heatmap, aes(x = year, y = age_band, fill = incidence_
 plot3
 ```
 
-```{r plot4_possible_vs_narrow, fig.width=10, fig.height=6}
+```{r}
 plot4 <- ggplot(plot_data_definition, aes(x = year, y = incidence_per_1000py, color = asthma_type)) +
   geom_line(linewidth = 1.1) +
   geom_point(size = 1.8) +
@@ -733,7 +733,7 @@ plot4
 
 ### 6.2 Key Findings
 
-```{r save_plots, echo=TRUE}
+```{r}
 dir.create("figures", showWarnings = FALSE, recursive = TRUE)
 
 ggsave("figures/figure1_yearly_trend_by_sex.png", plot = plot1, width = 10, height = 7, dpi = 300)
